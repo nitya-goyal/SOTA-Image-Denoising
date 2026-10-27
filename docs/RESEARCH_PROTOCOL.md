@@ -1,11 +1,20 @@
-# Experiment protocol
+# Image denoising research protocol
 
-## Question and scope
+## Project and current stage
 
-Task: supervised single-image sRGB denoising on SIDD. Compare an explicitly
-defined U-Net regression baseline and NAFNet; neither is a novel architecture.
-Use the reduced pair for laptop experiments, or the standard pair for the
-main width-32 architecture study. Report which was used.
+The project studies real-world image denoising and aims to investigate future
+improvements. Current work establishes a reliable supervised SIDD pipeline,
+a U-Net baseline and an implementation of NAFNet to understand an established
+published method. The initial comparison supports learning and later research;
+it is not the complete project contribution.
+
+Preserve these baseline runs when introducing changes. Choose an improvement
+from measured failure cases and literature, state a testable hypothesis, then
+compare against the unchanged methods using ablations and repeated seeds.
+The standard config follows the base width-32 NAFNet architecture, but our
+common training recipe is not the original paper recipe. Published-result
+reproduction remains a distinct task requiring matching training, data and
+evaluation details, including the upstream inference choices.
 
 ## Data
 

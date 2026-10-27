@@ -1,19 +1,63 @@
-# Image Denoising: U-Net vs NAFNet on SIDD
+# Real-World Image Denoising
 
-A focused research codebase for supervised **real smartphone image denoising**.
-Input: a noisy sRGB image. Target: its aligned SIDD ground-truth image.
-No synthetic noise is added during training or evaluation.
+A research project on removing noise from real photographs while preserving
+textures, edges and colours. We use paired noisy/clean sRGB images from SIDD.
 
-The research question is: **How do a conventional U-Net denoising baseline and
-NAFNet compare in restoration quality, parameter count and inference time under
-the same training budget?**
+**Current stage: implement and understand existing methods.** U-Net is our first
+baseline; NAFNet is the stronger published method we study next. Comparing these
+models is an initial experiment, not the final project title or contribution.
+Later stages will investigate weaknesses, propose improvements and test them
+against these preserved reference implementations.
 
-NAFNet achieved state-of-the-art results when published at ECCV 2022. This project
-does not claim that NAFNet is the latest 2026 model or that this implementation
-reproduces its published scores. Recent denoising papers and their different
-settings are covered in [RESEARCH_AND_PAPERS.md](RESEARCH_AND_PAPERS.md).
+## Research roadmap
 
-## Start here
+1. Establish a reliable SIDD data, training and evaluation pipeline.
+2. Train U-Net and the standard NAFNet architecture; understand the paper,
+   inspect outputs, and document differences from the original recipe.
+3. Study failure cases and recent work to choose a specific improvement.
+4. Implement that improvement in a separate configuration/model and evaluate
+   it with controlled comparisons, repeated seeds and ablations.
+
+NAFNet achieved state-of-the-art results when published at ECCV 2022. Implementing
+it is the first published-method step; the supplied common-budget recipe does
+not reproduce its original training procedure or establish current SOTA results.
+No trained weights or SIDD experiment scores are bundled. Recent papers and
+citations are in [RESEARCH_AND_PAPERS.md](RESEARCH_AND_PAPERS.md).
+
+## Run this stage in Google Colab
+
+[Open the notebook in Colab](https://colab.research.google.com/github/nitya-goyal/SOTA-Image-Denoising/blob/main/notebooks/Image_Denoising_Colab.ipynb)
+
+The laptop does not need its own GPU. In Colab, choose **Runtime > Change runtime
+type > GPU**, then run the notebook cells in order. GPU availability and runtime
+limits vary; see the [official Colab FAQ](https://research.google.com/colaboratory/faq.html).
+
+1. Put the **already downloaded SIDD Medium sRGB** folder or its ZIP archive in
+   Google Drive. Do not download the dataset again or rename the original folders.
+2. Mount Drive in the notebook and edit its dataset path and experiment name.
+3. The notebook copies/extracts the data to the runtime's local disk for reading,
+   validates pairs, prepares fixed splits, and runs a two-step sanity check.
+4. Run the U-Net and NAFNet training cells in chunks. Configs, manifests,
+   checkpoints and logs live in your Drive experiment folder. Rerun a training
+   cell to continue from `last.pt` until the configured budget is reached.
+5. Evaluate both models on the same held-out data and save metrics and comparison
+   images to Drive. The notebook labels partial-budget runs as preliminary.
+
+After a disconnect, reconnect, rerun setup/mount/data staging, select the SAME
+experiment name and model size, then rerun training. Do not change the copied
+configs or split settings for an existing run. Runtime `/content` files are
+transient; only files saved in Drive persist. Checkpoint work since the last
+save can be lost. The code records the revision so a resumed run uses the same
+implementation. Notebook outputs include a download link for a small results ZIP.
+
+Start with `MODEL_SIZE = "standard"` to study the published width-32 NAFNet base
+architecture. If memory requires the smaller pair, use a new experiment name
+with `MODEL_SIZE = "laptop"` and label NAFNet as a reduced variant. The notebook
+supports both a custom scene holdout and official validation MAT files; official
+validation results are not independent test results. Only the custom protocol
+creates a local `test.csv`.
+
+## Local setup (optional)
 
 Use Python 3.11 or 3.12. Create a virtual environment and install PyTorch
 for your hardware using the [official selector](https://pytorch.org/get-started/locally/).
@@ -31,6 +75,7 @@ On macOS/Linux create it with `python3 -m venv .venv` and activate with
 CPU works for checks; sustained training benefits from a GPU.
 
 ```text
+notebooks/            Colab setup, persistent checkpoints and staged training
 prepare_sidd.py        Original SIDD PNG pairing, scene splits, validation MAT export
 train.py               Shared L1 training, reproducible sampling, checkpoint/resume
 evaluate.py            Checkpoint-only comparison, RGB PSNR/SSIM, timings, CSV/JSON
@@ -44,11 +89,12 @@ docs/                  Research protocol and verification notes
 third_party/           NAFNet attribution and upstream license
 ```
 
-## Minimal workflow
+## Local command-line workflow
 
 Install PyTorch for your hardware first, then `python -m pip install -r requirements.txt`.
-Download **SIDD Medium sRGB** from the [official dataset page](https://abdokamel.github.io/sidd/)
-and extract it without renaming the scene folders.
+Point `--source` to your existing **SIDD Medium sRGB** extraction. Keep original
+scene folders. If needed, the dataset is available from the
+[official SIDD page](https://abdokamel.github.io/sidd/).
 
 ```bash
 python prepare_sidd.py --source data/SIDD_Medium_Srgb --output data/sidd

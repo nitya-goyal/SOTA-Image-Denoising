@@ -44,10 +44,13 @@ latest best model across these settings.
 
 ## What we can claim after running experiments
 
-Proposed title: **Real-World Image Denoising on SIDD: A Controlled Comparison of
-U-Net and NAFNet**.
+Working project title: **Real-World Image Denoising**.
 
-The core study measures RGB PSNR, SSIM, parameter count and device-specific warm
+The U-Net/NAFNet comparison is the first implementation and learning milestone.
+It establishes reference methods before investigating improvements; the final
+project title should reflect the eventual research contribution.
+
+The initial milestone measures RGB PSNR, SSIM, parameter count and device-specific warm
 inference time under a documented common training budget. A stronger research
 analysis would repeat training seeds and report scene-level behavior, failure
 cases and quality/compute tradeoffs. A new SOTA or novel-method claim requires

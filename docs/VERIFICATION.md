@@ -31,3 +31,14 @@ published-score reproduction or pretrained-weight import support.
 Run `python -m pytest -q`. In this restricted Windows sandbox the OS temporary
 directory blocked checkpoint renames, so verification used a workspace-owned
 temporary directory: `python -m pytest -q --basetemp=data/verification/pytest_final`.
+
+
+## Colab notebook
+
+The stage-one notebook's code cells compile and contain no saved execution
+outputs. Local checks emulated Colab/Drive setup and verified saved revision
+round-tripping, local folder staging, execution of the real preparation script,
+manifest hash checks, config copying, and smoke/chunk/resume command selection.
+Cloud mounting, cloning/installing in Colab, CUDA execution and a full SIDD
+training session were not performed by these local checks. The existing model
+and training code is unchanged by the notebook addition.
