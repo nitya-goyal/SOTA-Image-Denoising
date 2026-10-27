@@ -1,0 +1,12 @@
+{
+  "model": {"name": "unet", "width": 32},
+  "seed": 42,
+  "max_steps": 20000,
+  "batch_size": 2,
+  "patch_size": 128,
+  "val_patch_size": 256,
+  "eval_every": 1000,
+  "lr": 0.0002,
+  "min_lr": 0.000001,
+  "amp": false
+}

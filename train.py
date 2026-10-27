@@ -1,177 +1,161 @@
-"""
-Training Pipeline for SOTA Image Denoising Models (Restormer, NAFNet, DnCNN)
-Includes AMP Mixed Precision, Cosine Annealing, Gradient Clipping, and Validation.
-"""
-
-import os
+"""Train U-Net or NAFNet on real SIDD pairs under a recorded step budget."""
 import argparse
+import csv
+from contextlib import nullcontext
+import json
+from pathlib import Path
+import random
 import time
+
+import numpy as np
 import torch
-import torch.nn as nn
-from torch.utils.data import DataLoader
-from torch.optim.lr_scheduler import CosineAnnealingLR
-from tqdm import tqdm
+from torch.nn import functional as F
 
-from models import NAFNet, nafnet_sidd, nafnet_tiny, Restormer, restormer_tiny, DnCNN
-from datasets import SyntheticDenoisingDataset, PairedDenoisingDataset, generate_synthetic_samples
-from losses import CharbonnierLoss, CompoundDenoisingLoss
-from metrics import calculate_psnr, calculate_ssim
-from utils import save_comparison_grid
+from datasets.paired_dataset import PairedDataset
+from metrics import image_metrics
+from models import build_model
+from utils.runtime import as_hwc, choose_device, environment, file_hash, save_json, seed_everything
 
 
-def get_model(name, width=32):
-    name = name.lower()
-    if name == 'nafnet':
-        return NAFNet(in_channels=3, out_channels=3, width=width, middle_blk_num=2,
-                      enc_blk_nums=[2, 2, 4, 8], dec_blk_nums=[2, 2, 2, 2])
-    elif name == 'nafnet_tiny':
-        return nafnet_tiny(width=16)
-    elif name == 'nafnet_sidd':
-        return nafnet_sidd(width=32)
-    elif name == 'restormer':
-        return Restormer(dim=48, num_blocks=[4, 6, 6, 8], num_refinement_blocks=4, heads=[1, 2, 4, 8])
-    elif name == 'restormer_tiny':
-        return restormer_tiny(dim=24, num_blocks=[2, 2, 2, 2], num_refinement_blocks=2, heads=[1, 2, 2, 4])
-    elif name == 'dncnn':
-        return DnCNN(in_channels=3, out_channels=3, num_layers=17, num_features=64)
-    else:
-        raise ValueError(f"Unknown model name: {name}")
+def validate(model, dataset, device):
+    model.eval()
+    scores = []
+    with torch.inference_mode():
+        for pair in dataset:
+            prediction = model(pair['noisy'].unsqueeze(0).to(device)).clamp(0, 1)[0]
+            scores.append(image_metrics(as_hwc(prediction), as_hwc(pair['clean'])))
+    model.train()
+    return {key: float(np.mean([score[key] for score in scores])) for key in ('psnr', 'ssim')}
+
+
+def assert_disjoint(train, val):
+    if {r['group'] for r in train.rows} & {r['group'] for r in val.rows}:
+        raise ValueError('Train/validation group overlap; regenerate disjoint scene splits')
+    train_paths = {r[k] for r in train.rows for k in ('noisy', 'clean')}
+    val_paths = {r[k] for r in val.rows for k in ('noisy', 'clean')}
+    if train_paths & val_paths:
+        raise ValueError('Train/validation images overlap')
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train SOTA Image Denoising Models")
-    parser.add_argument('--model', type=str, default='nafnet_tiny', choices=['nafnet', 'nafnet_tiny', 'nafnet_sidd', 'restormer', 'restormer_tiny', 'dncnn'])
-    parser.add_argument('--train_dir', type=str, default='./data/train_clean')
-    parser.add_argument('--val_dir', type=str, default='./data/val_clean')
-    parser.add_argument('--noise_type', type=str, default='gaussian', choices=['gaussian', 'blind_gaussian', 'poisson', 'sensor', 'isp'])
-    parser.add_argument('--sigma', type=float, default=25.0)
-    parser.add_argument('--epochs', type=int, default=30)
-    parser.add_argument('--batch_size', type=int, default=8)
-    parser.add_argument('--patch_size', type=int, default=128)
-    parser.add_argument('--lr', type=float, default=2e-4)
-    parser.add_argument('--min_lr', type=float, default=1e-6)
-    parser.add_argument('--save_dir', type=str, default='./checkpoints')
-    parser.add_argument('--use_amp', action='store_true', default=True)
-    parser.add_argument('--num_workers', type=int, default=2)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--config', type=Path, required=True)
+    parser.add_argument('--data', type=Path, default=Path('data/sidd'))
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--device', choices=['auto', 'cpu', 'cuda', 'mps'], default='auto')
+    parser.add_argument('--resume', type=Path, help='last.pt in the same output directory')
+    parser.add_argument('--stop-after', type=int, help='Stop at this total step without changing the LR schedule (smoke test)')
+    parser.add_argument('--threads', type=int, default=4)
     args = parser.parse_args()
-
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    print(f"Using device: {device} | Model: {args.model} | Noise: {args.noise_type} (sigma={args.sigma})")
-
-    # If data doesn't exist, create synthetic samples for quick start
-    if not os.path.exists(args.train_dir) or len(os.listdir(args.train_dir)) == 0:
-        print(f"Training directory {args.train_dir} not found. Generating synthetic samples...")
-        generate_synthetic_samples(args.train_dir, count=30)
-    if not os.path.exists(args.val_dir) or len(os.listdir(args.val_dir)) == 0:
-        generate_synthetic_samples(args.val_dir, count=8)
-
-    # Datasets
-    train_dataset = SyntheticDenoisingDataset(
-        image_dir=args.train_dir,
-        patch_size=args.patch_size,
-        noise_type=args.noise_type,
-        sigma=args.sigma,
-        is_train=True
-    )
-    val_dataset = SyntheticDenoisingDataset(
-        image_dir=args.val_dir,
-        patch_size=args.patch_size,
-        noise_type=args.noise_type,
-        sigma=args.sigma,
-        is_train=False
-    )
-
-    train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
-                              num_workers=args.num_workers, pin_memory=(device.type == 'cuda'))
-    val_loader = DataLoader(val_dataset, batch_size=1, shuffle=False)
-
-    # Model, Optimizer, Scheduler, Loss
-    model = get_model(args.model).to(device)
-    num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Total Trainable Parameters: {num_params / 1e6:.2f} Million")
-
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4, betas=(0.9, 0.999))
-    scheduler = CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=args.min_lr)
-    criterion = CompoundDenoisingLoss()
-
-    scaler = torch.cuda.amp.GradScaler(enabled=(args.use_amp and device.type == 'cuda'))
-    os.makedirs(args.save_dir, exist_ok=True)
-    best_psnr = 0.0
-
-    print("--- Starting Training Loop ---")
-    for epoch in range(1, args.epochs + 1):
-        model.train()
-        total_loss = 0.0
-        start_time = time.time()
-
-        pbar = tqdm(train_loader, desc=f"Epoch {epoch}/{args.epochs}")
-        for batch in pbar:
-            noisy = batch['noisy'].to(device)
-            clean = batch['clean'].to(device)
-
-            optimizer.zero_grad()
-
-            with torch.cuda.amp.autocast(enabled=(args.use_amp and device.type == 'cuda')):
-                pred = model(noisy)
-                loss, loss_dict = criterion(pred, clean)
-
-            scaler.scale(loss).backward()
-            scaler.unscale_(optimizer)
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            scaler.step(optimizer)
-            scaler.update()
-
-            total_loss += loss.item()
-            pbar.set_postfix({'Loss': f"{loss.item():.4f}", 'LR': f"{scheduler.get_last_lr()[0]:.2e}"})
-
+    config = json.loads(args.config.read_text(encoding='utf-8'))
+    for key in ('max_steps', 'batch_size', 'patch_size', 'val_patch_size', 'eval_every'):
+        if not isinstance(config[key], int) or config[key] < 1:
+            parser.error(f'{key} must be a positive integer')
+    if min(config['patch_size'], config['val_patch_size']) < 16:
+        parser.error('Patch sizes must be at least 16')
+    if args.threads < 1 or (args.stop_after is not None and args.stop_after < 1):
+        parser.error('--threads and --stop-after must be positive')
+    torch.set_num_threads(args.threads)
+    device = choose_device(args.device)
+    seed_everything(config['seed'])
+    train_csv, val_csv = args.data / 'train.csv', args.data / 'val.csv'
+    train = PairedDataset(train_csv, config['patch_size'], training=True)
+    val = PairedDataset(val_csv, config['val_patch_size'])
+    assert_disjoint(train, val)
+    hashes = {'train': file_hash(train_csv), 'val': file_hash(val_csv)}
+    if args.resume:
+        if args.resume.name != 'last.pt' or args.resume.resolve().parent != args.output.resolve():
+            parser.error('--resume must be last.pt inside --output to preserve the run history')
+        checkpoint = torch.load(args.resume, map_location='cpu', weights_only=True)
+        if checkpoint['config'] != config or checkpoint['manifest_hashes'] != hashes:
+            parser.error('Resume config or data manifests differ from the saved run')
+    else:
+        if args.output.exists() and any(args.output.iterdir()):
+            parser.error('Output is not empty; choose a new run folder or use --resume')
+        checkpoint = None
+    args.output.mkdir(parents=True, exist_ok=True)
+    model = build_model(config['model']).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=config['lr'], weight_decay=0,
+                                 betas=(0.9, 0.999))
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=config['max_steps'], eta_min=config['min_lr'])
+    amp = config.get('amp', False) and device.type == 'cuda'
+    scaler = torch.amp.GradScaler('cuda', enabled=amp)
+    start_step, best_psnr = 0, float('-inf')
+    if checkpoint:
+        model.load_state_dict(checkpoint['model'], strict=True)
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
+        scaler.load_state_dict(checkpoint['scaler'])
+        start_step, best_psnr = checkpoint['step'], checkpoint['best_psnr']
+        torch.set_rng_state(checkpoint['torch_rng'])
+        if device.type == 'cuda' and checkpoint['cuda_rng']:
+            torch.cuda.set_rng_state_all(checkpoint['cuda_rng'])
+    finish = min(config['max_steps'], args.stop_after or config['max_steps'])
+    if finish <= start_step:
+        parser.error('No remaining steps; increase --stop-after or use the completed checkpoint')
+    save_json(args.output / 'config.json', config)
+    metadata = {'environment': environment(device), 'manifest_hashes': hashes,
+                'parameters': sum(p.numel() for p in model.parameters()),
+                'train_pairs': len(train), 'val_pairs': len(val),
+                'validation_scope': f'deterministic center {config["val_patch_size"]}x{config["val_patch_size"]}',
+                'loss': 'L1', 'amp_enabled': amp, 'threads': args.threads}
+    save_json(args.output / ('resume_environment.json' if checkpoint else 'run_info.json'), metadata)
+    print(json.dumps(metadata, indent=2), flush=True)
+    print('Starting training; checkpoints and validation history go to', args.output, flush=True)
+    history = args.output / 'history.csv'
+    if checkpoint and not history.is_file():
+        raise ValueError('Missing history.csv; resume the complete original run folder')
+    model.train()
+    began = time.perf_counter()
+    total_loss, interval_steps = 0.0, 0
+    for step in range(start_step + 1, finish + 1):
+        # Independent per-step RNG gives both models identical sampled pairs/crops.
+        # It also makes data sampling resume exactly without worker prefetch state.
+        rng = random.Random(config['seed'] * 1_000_003 + step)
+        pairs = [train.sample(rng.randrange(len(train)), rng) for _ in range(config['batch_size'])]
+        noisy = torch.stack([p['noisy'] for p in pairs]).to(device)
+        clean = torch.stack([p['clean'] for p in pairs]).to(device)
+        optimizer.zero_grad(set_to_none=True)
+        with torch.autocast('cuda', dtype=torch.float16) if amp else nullcontext():
+            loss = F.l1_loss(model(noisy), clean)
+        if not torch.isfinite(loss):
+            raise RuntimeError(f'Non-finite training loss at step {step}')
+        scaler.scale(loss).backward()
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
+        scaler.step(optimizer)
+        scaler.update()
         scheduler.step()
-        epoch_time = time.time() - start_time
-        avg_loss = total_loss / len(train_loader)
-
-        # Validation
-        model.eval()
-        val_psnr = 0.0
-        val_ssim = 0.0
-        with torch.no_grad():
-            for idx, val_batch in enumerate(val_loader):
-                v_noisy = val_batch['noisy'].to(device)
-                v_clean = val_batch['clean'].to(device)
-                v_pred = model(v_noisy)
-                v_pred = torch.clamp(v_pred, 0.0, 1.0)
-
-                val_psnr += calculate_psnr(v_pred[0], v_clean[0])
-                val_ssim += calculate_ssim(v_pred[0], v_clean[0])
-
-                if idx == 0:
-                    # Save sample image
-                    save_comparison_grid(
-                        v_noisy[0], v_pred[0], v_clean[0],
-                        save_path=os.path.join(args.save_dir, f"epoch_{epoch}_sample.png"),
-                        psnr=calculate_psnr(v_pred[0], v_clean[0]),
-                        ssim=calculate_ssim(v_pred[0], v_clean[0]),
-                        model_name=args.model
-                    )
-
-        avg_psnr = val_psnr / len(val_loader)
-        avg_ssim = val_ssim / len(val_loader)
-
-        print(f"Epoch {epoch:02d}/{args.epochs:02d} [{epoch_time:.1f}s] - Train Loss: {avg_loss:.4f} | Val PSNR: {avg_psnr:.2f} dB | Val SSIM: {avg_ssim:.4f}")
-
-        # Save Best Model
-        if avg_psnr > best_psnr:
-            best_psnr = avg_psnr
-            best_path = os.path.join(args.save_dir, f"{args.model}_best.pth")
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'best_psnr': best_psnr,
-                'best_ssim': avg_ssim,
-                'args': vars(args)
-            }, best_path)
-            print(f"==> Saved New Best Checkpoint: {best_path} (PSNR: {best_psnr:.2f} dB)")
-
-    print(f"Training Complete! Best Validation PSNR: {best_psnr:.2f} dB")
+        total_loss += loss.item()
+        interval_steps += 1
+        if step == 1 or step % 10 == 0:
+            print(f'Step {step}/{config["max_steps"]}: L1={loss.item():.6f}', flush=True)
+        if step % config['eval_every'] == 0 or step == finish:
+            scores = validate(model, val, device)
+            row = {'step': step, 'train_l1': total_loss / interval_steps, **scores,
+                   'lr': scheduler.get_last_lr()[0], 'elapsed_this_session_s': time.perf_counter() - began}
+            with history.open('a', newline='', encoding='utf-8') as handle:
+                writer = csv.DictWriter(handle, fieldnames=list(row))
+                if handle.tell() == 0:
+                    writer.writeheader()
+                writer.writerow(row)
+            improved = scores['psnr'] > best_psnr
+            best_psnr = max(best_psnr, scores['psnr'])
+            state = {'format_version': 1, 'config': config, 'step': step, 'model': model.state_dict(),
+                     'optimizer': optimizer.state_dict(), 'scheduler': scheduler.state_dict(),
+                     'scaler': scaler.state_dict(), 'best_psnr': best_psnr, 'manifest_hashes': hashes,
+                     'train_pair_ids': [r['id'] for r in train.rows],
+                     'torch_rng': torch.get_rng_state(),
+                     'cuda_rng': torch.cuda.get_rng_state_all() if device.type == 'cuda' else []}
+            # Atomic replacement avoids losing last.pt if interrupted during serialization.
+            temporary = args.output / 'checkpoint.tmp'
+            torch.save(state, temporary)
+            temporary.replace(args.output / 'last.pt')
+            if improved:
+                torch.save(state, args.output / 'best.pt')
+            print(f'Validation at {step}: PSNR={scores["psnr"]:.3f}, SSIM={scores["ssim"]:.5f}', flush=True)
+            total_loss, interval_steps = 0.0, 0
 
 
 if __name__ == '__main__':
