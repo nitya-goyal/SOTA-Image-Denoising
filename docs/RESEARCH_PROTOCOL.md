@@ -85,3 +85,21 @@ and evaluation setup before comparing numbers.
 Show fixed representative crops of noisy/prediction/ground truth, including
 fine textures, dark regions and failures. Avoid selecting only favorable images.
 Store results outside Git and share evidence with the teammate separately.
+
+
+## Official validation commands
+
+If the original validation MAT files are available, prepare a separate folder:
+
+```powershell
+python prepare_sidd.py --source "D:/datasets/SIDD_Medium_Srgb" --output data/sidd_official --protocol official --val-noisy "D:/datasets/ValidationNoisyBlocksSrgb.mat" --val-clean "D:/datasets/ValidationGtBlocksSrgb.mat"
+```
+
+The expected uint8 variables are `ValidationNoisyBlocksSrgb` and
+`ValidationGtBlocksSrgb`, shaped (scenes, blocks, H, W, 3). Both arrays are loaded
+into RAM once for conversion. This uses all discovered Medium pairs for training
+and separate validation blocks, creating train.csv and val.csv, not test.csv.
+Use `--data data/sidd_official` for BOTH training runs, different run folders,
+and `--manifest data/sidd_official/val.csv` for evaluation. A validation-selected
+checkpoint's score on these blocks is official validation, not hidden-test
+benchmark performance. Do not combine it with internal scene-holdout scores.

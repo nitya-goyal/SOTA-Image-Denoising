@@ -12,7 +12,8 @@ official-format MAT conversion, and a small train/resume/evaluate/denoise run
 for both architectures. It verifies CPU resume against uninterrupted training.
 Small generated fixtures test software behavior only; they are not research data.
 
-All four supplied model configurations passed a 35x37 RGB forward check.
+The configurations supplied at that time passed a 35x37 RGB forward check.
+Only the two standard architecture configs are retained in the current repo.
 The standard NAFNet width-32 architecture has 29,159,715 parameters and loaded
 the official architecture's state dictionary with strict key/shape checking.
 Its output matched the official architecture on the checked input. Native
@@ -33,16 +34,6 @@ directory blocked checkpoint renames, so verification used a workspace-owned
 temporary directory: `python -m pytest -q --basetemp=data/verification/pytest_final`.
 
 
-## Colab notebook
-
-The stage-one notebook's code cells compile and contain no saved execution
-outputs. Local checks emulated Colab/Drive setup and verified saved revision
-round-tripping, local folder staging, execution of the real preparation script,
-manifest hash checks, config copying, and smoke/chunk/resume command selection.
-Cloud mounting, cloning/installing in Colab, CUDA execution and a full SIDD
-training session were not performed by these local checks. The existing model
-and training code is unchanged by the notebook addition.
-
 
 ## Local GPU workflow update — 29 October 2026
 
@@ -56,5 +47,15 @@ also passed, and the source compiles with no whitespace errors.
 The existing model/training/evaluation code was not changed by this workflow
 update. Its original eight checks are recorded above; they were not rerun for
 this separate setup script. Actual CUDA/ROCm/MPS execution and peak GPU-memory
-behavior remain to be verified on the friend's PC. The Acer laptop family name
-does not establish the exact GPU or VRAM; retain the actual hardware JSON.
+behavior remain to be verified on the friend's Windows 11 RTX 4050 laptop.
+Retain the actual hardware JSON to record its available memory and installation.
+
+
+## Current repository scope
+
+Removed the provider-specific Colab notebook and reduced-architecture presets.
+The standard model implementations, shared data/training/evaluation code and
+checkpoint format are unchanged. Documentation now follows local Windows/CUDA
+execution and two-contributor branch/review workflows. Cleanup verification
+checks remaining config consistency, Python syntax and repository-local links;
+it is not another model-quality or GPU experiment.

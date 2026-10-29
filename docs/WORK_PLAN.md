@@ -4,9 +4,9 @@
 
 | Work | Repository owner | Friend with the GPU PC |
 | --- | --- | --- |
-| Source and configs | Review, commit and push approved changes; maintain revision record | Clone/pull before runs; share fixes for review; no push permission required |
+| Source and configs | Review changes and maintain revision/experiment records | Work on feature branches, push source/config fixes and request review |
 | Dataset | Agree protocol and inspect scene splits together | Store existing SIDD locally, validate pairs, retain manifests and metadata |
-| Experiments | Maintain experiment register and check fair comparisons | Confirm actual GPU/VRAM, run memory checks, training, evaluation and backups |
+| Experiments | Maintain experiment register and check fair comparisons | Verify the Windows 11 RTX 4050 installation/free VRAM; run checks, training, evaluation and backups |
 | Papers and understanding | Lead literature notes and proposed hypotheses | Study implementations and connect observed behavior to the papers |
 | Analysis and reporting | Combine results, figures and presentation | Supply complete run evidence and help interpret successes/failures |
 
@@ -16,9 +16,10 @@ not train locally; timing comparisons should use the same GPU PC.
 
 ## First working session
 
-1. Clone current code on the GPU PC; install the correct PyTorch GPU build.
-2. Save `check_environment.py --require-gpu` output. The laptop name alone does
-   not establish its GPU, VRAM or whether the Python environment can use it.
+1. Accept collaborator access, clone current code and install a CUDA-enabled
+   PyTorch build on the Windows 11 RTX 4050 laptop.
+2. Save `check_environment.py --require-gpu --output runs/hardware.json` output.
+   Verify actual free VRAM and device execution rather than assuming them.
 3. Point preparation at the existing SIDD Medium sRGB folder. Agree on internal
    scene holdout versus official validation and save the split metadata.
 4. Run the real-data memory check for both standard models. Keep batch/patch/
@@ -89,3 +90,12 @@ the run. A checkpoint being actively written is not a safe backup snapshot.
 Git-ignored data/results are not uploaded with source. Share a small evidence
 bundle (metadata, histories, metrics and fixed crops) for reviews, with weights
 separately when needed. Agree data/checkpoint sharing locations between you.
+
+
+## Contributor changes
+
+Use an individual feature/experiment branch and a pull request for code changes.
+The owner and contributor review each other's work. Pull before starting a new
+run, not during one. Keep the commit, config and split fixed for continuation.
+If a run exposes a bug, stop and record its status before reviewing a fix; do not
+silently combine measurements from different implementations.
