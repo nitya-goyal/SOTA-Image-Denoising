@@ -175,3 +175,36 @@ def test_end_to_end_train_resume_compare_and_denoise(raw_pairs, tmp_path):
     assert 'training-manifest' in failed.stderr
     with pytest.raises(FileNotFoundError):
         load_checkpoint(tmp_path / 'missing.pt', torch.device('cpu'))
+
+
+@pytest.mark.parametrize('require_gpu', [False, True])
+def test_environment_report(tmp_path, require_gpu):
+    report = tmp_path / 'hardware.json'
+    arguments = ['check_environment.py', '--device', 'cpu', '--output', report]
+    if require_gpu:
+        arguments.append('--require-gpu')
+    run_cli(*arguments, succeeds=not require_gpu)
+    result = json.loads(report.read_text())
+    assert result['environment']['device'] == 'cpu'
+    assert result['status'] == ('failed' if require_gpu else 'passed')
+    assert 'cuda_build' in result and 'rocm_build' in result
+
+
+def test_real_data_preflight(raw_pairs, tmp_path):
+    data = tmp_path / 'prepared'
+    data.mkdir()
+    write_manifest(data / 'train.csv', discover_pairs(raw_pairs))
+    config = {'model': {'name': 'nafnet', 'width': 2, 'middle_blk_num': 1,
+                        'enc_blk_nums': [1]*4, 'dec_blk_nums': [1]*4},
+              'seed': 42, 'batch_size': 1, 'patch_size': 32, 'lr': 0.0002, 'amp': False}
+    config_path = tmp_path / 'config.json'
+    config_path.write_text(json.dumps(config))
+    report = tmp_path / 'preflight.json'
+    run_cli('check_environment.py', '--device', 'cpu', '--config', config_path,
+            '--data', data, '--output', report)
+    result = json.loads(report.read_text())
+    assert result['training_check']['status'] == 'passed'
+    assert result['training_check']['real_pairs'] == 1
+    assert result['training_check']['parameters'] > 0
+    assert result['training_check']['first_training_step_seconds'] > 0
+    assert not list(tmp_path.rglob('*.pt'))

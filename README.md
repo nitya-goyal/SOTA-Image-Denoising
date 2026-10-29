@@ -1,214 +1,211 @@
 # Real-World Image Denoising
 
-A research project on removing noise from real photographs while preserving
-textures, edges and colours. We use paired noisy/clean sRGB images from SIDD.
+Research on removing noise from real photographs while preserving edges,
+textures and colours. We use real paired SIDD sRGB images; no synthetic noise
+is added to training or evaluation.
 
-**Current stage: implement and understand existing methods.** U-Net is our first
-baseline; NAFNet is the stronger published method we study next. Comparing these
-models is an initial experiment, not the final project title or contribution.
-Later stages will investigate weaknesses, propose improvements and test them
-against these preserved reference implementations.
+**Stage one:** understand and implement existing methods. U-Net is the initial
+baseline; NAFNet is the stronger published method. These references support our
+later investigation of improvements; they are not the final project title.
+NAFNet achieved SOTA results in 2022. Our initial common-budget experiments do
+not establish current SOTA or reproduce its original training recipe.
 
-## Research roadmap
+## Two-person workflow
 
-1. Establish a reliable SIDD data, training and evaluation pipeline.
-2. Train U-Net and the standard NAFNet architecture; understand the paper,
-   inspect outputs, and document differences from the original recipe.
-3. Study failure cases and recent work to choose a specific improvement.
-4. Implement that improvement in a separate configuration/model and evaluate
-   it with controlled comparisons, repeated seeds and ablations.
+Use your friend's **local GPU PC** as the main training machine. The repository
+owner manages reviewed code/configs, papers and experiment analysis. The GPU
+operator manages the local dataset, runs and backups. Both review the methods,
+outputs and conclusions. Only the owner needs push access; the friend can clone
+this public repo without collaborator access.
 
-NAFNet achieved state-of-the-art results when published at ECCV 2022. Implementing
-it is the first published-method step; the supplied common-budget recipe does
-not reproduce its original training procedure or establish current SOTA results.
-No trained weights or SIDD experiment scores are bundled. Recent papers and
-citations are in [RESEARCH_AND_PAPERS.md](RESEARCH_AND_PAPERS.md).
+Keep source/configs in Git and data/checkpoints outside Git. Keep both baseline
+runs unchanged when starting an improvement experiment. The work sequence and
+what to show your supervisor are in [docs/WORK_PLAN.md](docs/WORK_PLAN.md).
 
-## Run this stage in Google Colab
+## 1. Set up the GPU PC
 
-[Open the notebook in Colab](https://colab.research.google.com/github/nitya-goyal/SOTA-Image-Denoising/blob/main/notebooks/Image_Denoising_Colab.ipynb)
+The Acer Predator Helios Neo 16 name does not identify its exact GPU or VRAM.
+Check the actual machine before choosing batch sizes or estimating runtime.
+Use Python 3.11/3.12 and run from the repository folder.
 
-The laptop does not need its own GPU. In Colab, choose **Runtime > Change runtime
-type > GPU**, then run the notebook cells in order. GPU availability and runtime
-limits vary; see the [official Colab FAQ](https://research.google.com/colaboratory/faq.html).
-
-1. Put the **already downloaded SIDD Medium sRGB** folder or its ZIP archive in
-   Google Drive. Do not download the dataset again or rename the original folders.
-2. Mount Drive in the notebook and edit its dataset path and experiment name.
-3. The notebook copies/extracts the data to the runtime's local disk for reading,
-   validates pairs, prepares fixed splits, and runs a two-step sanity check.
-4. Run the U-Net and NAFNet training cells in chunks. Configs, manifests,
-   checkpoints and logs live in your Drive experiment folder. Rerun a training
-   cell to continue from `last.pt` until the configured budget is reached.
-5. Evaluate both models on the same held-out data and save metrics and comparison
-   images to Drive. The notebook labels partial-budget runs as preliminary.
-
-After a disconnect, reconnect, rerun setup/mount/data staging, select the SAME
-experiment name and model size, then rerun training. Do not change the copied
-configs or split settings for an existing run. Runtime `/content` files are
-transient; only files saved in Drive persist. Checkpoint work since the last
-save can be lost. The code records the revision so a resumed run uses the same
-implementation. Notebook outputs include a download link for a small results ZIP.
-
-Start with `MODEL_SIZE = "standard"` to study the published width-32 NAFNet base
-architecture. If memory requires the smaller pair, use a new experiment name
-with `MODEL_SIZE = "laptop"` and label NAFNet as a reduced variant. The notebook
-supports both a custom scene holdout and official validation MAT files; official
-validation results are not independent test results. Only the custom protocol
-creates a local `test.csv`.
-
-## Local setup (optional)
-
-Use Python 3.11 or 3.12. Create a virtual environment and install PyTorch
-for your hardware using the [official selector](https://pytorch.org/get-started/locally/).
-Windows CPU example:
+Windows PowerShell:
 
 ```powershell
+git clone https://github.com/nitya-goyal/SOTA-Image-Denoising.git
+cd SOTA-Image-Denoising
 py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install "torch>=2.4,<3" --index-url https://download.pytorch.org/whl/cpu
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
 ```
 
-Use the environment's Python for the commands below (or activate the environment).
-On macOS/Linux create it with `python3 -m venv .venv` and activate with
-`source .venv/bin/activate`; install the hardware-appropriate PyTorch build.
-CPU works for checks; sustained training benefits from a GPU.
+If activation is blocked, use `.\.venv\Scripts\python.exe` instead of `python`;
+no execution-policy change is required. On Linux, create the environment with
+`python3 -m venv .venv` and activate with `source .venv/bin/activate`.
+
+**Install the GPU-capable PyTorch build first** using the
+[official PyTorch selector](https://pytorch.org/get-started/locally/) for the
+actual OS, GPU backend and driver. This repo does not assume a CUDA version.
+A CPU-only installation cannot train on an NVIDIA GPU. AMD GPU support depends
+on the supported OS/backend; do not install CUDA based only on the word GPU.
+
+Then:
+
+```bash
+python -m pip install -r requirements.txt
+python check_environment.py --require-gpu --output runs/hardware.json
+```
+
+The report records the actual device and available GPU memory and verifies
+execution on that device. If it reports CPU, fix the installation/driver before
+starting a long run. `--device cuda` below means a supported CUDA/ROCm PyTorch
+GPU backend; use `--device mps` on a compatible Apple machine. GPU execution on
+your friend's hardware still needs to be verified there.
+
+## 2. Prepare the existing SIDD data
+
+Place the existing **SIDD Medium sRGB** dataset on the GPU PC, preferably an SSD.
+If a fresh copy is needed, use the [official SIDD source](https://abdokamel.github.io/sidd/).
+Keep original scene folders and paired PNGs, e.g.
+`0001_001_S6_00100_00060_3200_L/NOISY_SRGB_010.PNG` and `GT_SRGB_010.PNG`.
+RAW MAT data and noisy-only benchmark test images are not training pairs.
+The source can be on another drive; it is read, not modified. The complete
+Medium set has 320 pairs. Missing partners or unrecognized folders are rejected.
+
+```bash
+python prepare_sidd.py --source "D:/datasets/SIDD_Medium_Srgb" --output data/sidd --protocol internal --seed 42
+```
+
+Replace the example source with the actual folder. The default internal
+train/val/test split groups by physical scene so camera/ISO variants stay
+together. Keep `split_info.json` and manifests unchanged for both models.
+**Internal scores are not official SIDD benchmark scores.** Regenerate manifests
+when moving the dataset; paths on a different Windows drive may be absolute.
+
+For official training + validation, supply the original validation MAT files:
+
+```bash
+python prepare_sidd.py --source "D:/datasets/SIDD_Medium_Srgb" --output data/sidd_official --protocol official --val-noisy "D:/datasets/ValidationNoisyBlocksSrgb.mat" --val-clean "D:/datasets/ValidationGtBlocksSrgb.mat"
+```
+
+Expected variables are uint8 `ValidationNoisyBlocksSrgb` and
+`ValidationGtBlocksSrgb`, shaped (scenes, blocks, H, W, 3). Conversion loads both
+arrays into RAM. This mode uses Medium training pairs and separate validation
+blocks, producing train.csv and val.csv, **no test.csv**. Use
+`--data data/sidd_official` for both training runs. Label evaluation of val.csv
+as official validation, not independent or hidden-test benchmark performance.
+
+## 3. Check memory using real data
+
+Run one disposable training step for each standard model before long training:
+
+```bash
+python check_environment.py --device cuda --require-gpu --config configs/unet_standard.json --data data/sidd --output runs/preflight_unet.json
+python check_environment.py --device cuda --require-gpu --config configs/nafnet_standard.json --data data/sidd --output runs/preflight_nafnet.json
+```
+
+This checks forward/backward/optimizer allocation on real pairs and reports
+peak allocated/reserved GPU memory. It produces no trained weights or research
+metrics. A first-step timing is not a reliable full-run estimate. Actual
+validation/inference memory must also be checked in a short run.
+
+If memory is insufficient, close other GPU apps first. Change batch/patch sizes
+for BOTH models in new configs or use the clearly labeled reduced `*_laptop.json`
+pair. Changing precision should also apply to both models in a new experiment.
+Equal widths do not imply equal parameter count or compute. Keep standard NAFNet
+for the published-architecture study when the hardware supports it.
+
+## 4. Start, inspect and resume both reference runs
+
+Start with a short **100-step pilot**, in main run folders so it can be resumed:
+
+```bash
+python train.py --config configs/unet_standard.json --data data/sidd --output runs/unet_standard_seed42 --device cuda --stop-after 100
+python train.py --config configs/nafnet_standard.json --data data/sidd --output runs/nafnet_standard_seed42 --device cuda --stop-after 100
+```
+
+Inspect finite losses, validation histories and checkpoint files. The pilot is
+pipeline evidence, not a completed denoising experiment. Do not tune on test data.
+If satisfactory, continue the SAME runs to their configured budgets:
+
+```bash
+python train.py --config configs/unet_standard.json --data data/sidd --output runs/unet_standard_seed42 --device cuda --resume runs/unet_standard_seed42/last.pt
+python train.py --config configs/nafnet_standard.json --data data/sidd --output runs/nafnet_standard_seed42 --device cuda --resume runs/nafnet_standard_seed42/last.pt
+```
+
+Run models sequentially on the same GPU; keep the PC plugged in and awake
+during the planned session. Supplied settings: 20,000 optimizer
+steps, batch 2, 128px patches, L1, AdamW, cosine schedule and fixed seed. Both
+models see matching sampled data/crops. Standard NAFNet uses width 32,
+encoder [2,2,4,8], middle 12, decoder [2,2,2,2], with base global pooling.
+This recipe is an initial controlled study, not the original paper's recipe/TLC.
+
+`--stop-after` is an absolute total step without shortening the LR schedule.
+Config/manifests must match on resume. Do not change code or pull updates during
+an active run. Checkpoints save at validation intervals and requested stops;
+unexpected termination loses later unsaved work. Original full-resolution PNG
+reads may bottleneck training; use an SSD and measure actual wall time.
+
+Record the exact code/environment with the experiment:
+
+```bash
+git rev-parse HEAD > runs/code_revision.txt
+python -m pip freeze > runs/environment.txt
+```
+
+## 5. Inspect validation first; evaluate test only after choices are fixed
+
+For a pilot, use a new output directory and validation only:
+
+```bash
+python evaluate.py --manifest data/sidd/val.csv --checkpoints runs/unet_standard_seed42/best.pt runs/nafnet_standard_seed42/best.pt --output results/pilot_validation --device cuda --tile-size 256 --overlap 32
+```
+
+After both planned budgets finish and model choices are fixed:
+
+```bash
+python evaluate.py --manifest data/sidd/test.csv --checkpoints runs/unet_standard_seed42/best.pt runs/nafnet_standard_seed42/best.pt --output results/standard_seed42_test --device cuda --tile-size 256 --overlap 32 --repeats 3
+```
+
+For the official protocol use `data/sidd_official/val.csv` and label scores as
+validation. Choose new result folders rather than overwriting prior evaluations.
+Outputs: `summary.json`, `per_image.csv`, and noisy | prediction | GT PNGs.
+Report RGB PSNR/SSIM, parameters, device, training step/budget and inference mode.
+Tile size affects NAFNet's pooling context; use identical inference settings for
+both models. `--tile-size 0` gives full-image inference when memory permits.
+Timings are warm float32 inference with synchronization, excluding loading,
+transfers, metrics and saving. They are not end-to-end application runtimes.
+
+Metrics: clipped float RGB [0,1], mean per-image PSNR, Gaussian 11x11 SSIM with
+sigma 1.5 and population covariance over valid windows, no extra border crop.
+Published scores and experimental results belong in separate tables.
+
+For a separate photograph (visual inspection only, unless GT is available):
+
+```bash
+python denoise.py --input path/to/noisy.png --checkpoint runs/nafnet_standard_seed42/best.pt --output results/denoised.png --device cuda
+```
+
+## Files and optional Colab fallback
 
 ```text
-notebooks/            Colab setup, persistent checkpoints and staged training
-prepare_sidd.py        Original SIDD PNG pairing, scene splits, validation MAT export
-train.py               Shared L1 training, reproducible sampling, checkpoint/resume
-evaluate.py            Checkpoint-only comparison, RGB PSNR/SSIM, timings, CSV/JSON
-denoise.py             Denoise one photograph using a trained checkpoint
-models/                U-Net baseline and NAFNet
-datasets/              Explicit paired-image CSV loader
-metrics/               RGB PSNR and Gaussian-window SSIM
-configs/               Matched laptop and standard-width experiment settings
-tests/                 Data integrity, model gradients, metrics, pipeline tests
-docs/                  Research protocol and verification notes
-third_party/           NAFNet attribution and upstream license
+check_environment.py   Hardware report and optional real-data training-memory check
+prepare_sidd.py        Explicit SIDD pairing and fixed split preparation
+train.py               Shared training and checkpoint/resume
+evaluate.py            Checkpoint-only metrics, timings and comparison images
+denoise.py             Single-photo denoising
+models/                U-Net and NAFNet reference architectures
+configs/               Standard and reduced matched experiment settings
+docs/WORK_PLAN.md      Two-person responsibilities, milestones and supervisor update
+RESEARCH_AND_PAPERS.md Source papers and recent reading
 ```
 
-## Local command-line workflow
+Local GPU training is the main workflow. If the local machine is unavailable,
+[the existing Colab notebook](https://colab.research.google.com/github/nitya-goyal/SOTA-Image-Denoising/blob/main/notebooks/Image_Denoising_Colab.ipynb)
+remains an optional fallback. Follow its Drive staging/checkpoint instructions;
+do not mix different data splits or configurations when reporting results.
 
-Install PyTorch for your hardware first, then `python -m pip install -r requirements.txt`.
-Point `--source` to your existing **SIDD Medium sRGB** extraction. Keep original
-scene folders. If needed, the dataset is available from the
-[official SIDD page](https://abdokamel.github.io/sidd/).
-
-```bash
-python prepare_sidd.py --source data/SIDD_Medium_Srgb --output data/sidd
-python train.py --config configs/unet_laptop.json --data data/sidd --output runs/unet
-python train.py --config configs/nafnet_laptop.json --data data/sidd --output runs/nafnet
-python evaluate.py --manifest data/sidd/test.csv --checkpoints runs/unet/best.pt runs/nafnet/best.pt --output results/comparison
-```
-
-These commands use a **custom physical-scene holdout**, not the official SIDD test
-benchmark. For comparison with papers, use the official validation-block workflow
-below. Do not train on validation blocks. Official benchmark test
-ground truth is not supplied by this repo.
-
-## Existing SIDD data and official validation
-
-The source path can be anywhere on your laptop. Preparation searches recursively
-for original SIDD folders such as `0001_001_S6_00100_00060_3200_L`, containing
-`NOISY_SRGB_010.PNG` and `GT_SRGB_010.PNG` (and the 011 pair).
-Keep original folder names: the second field identifies the physical scene.
-Pairing is by filename identity, not independently sorted image lists.
-The source must be sRGB PNG pairs; RAW data and benchmark noisy-only data are
-not supported by this supervised workflow. CSV paths are relative to their
-manifest directory when possible; Windows paths on another drive are absolute.
-Move data together or regenerate manifests locally.
-
-For the official train/validation protocol, provide the original validation
-MAT files. They must contain uint8 variables `ValidationNoisyBlocksSrgb` and
-`ValidationGtBlocksSrgb`, shaped (scenes, blocks, H, W, 3).
-
-```bash
-python prepare_sidd.py --source path/to/existing/SIDD --output data/sidd_official --protocol official --val-noisy path/to/ValidationNoisyBlocksSrgb.mat --val-clean path/to/ValidationGtBlocksSrgb.mat
-```
-
-This produces `train.csv` and `val.csv`, with all discovered Medium pairs used
-for training and the validation blocks exported as PNGs. Both MAT arrays are
-loaded into RAM once during preparation. Train with `--data data/sidd_official`
-and evaluate `--manifest data/sidd_official/val.csv`. There is no `test.csv` for
-this protocol. Label these scores as validation; they are not hidden-test scores.
-
-## Smoke run, resume and single-photo inference
-
-```bash
-python train.py --config configs/unet_laptop.json --data data/sidd --output runs/unet_smoke --stop-after 2 --device cpu
-python train.py --config configs/nafnet_laptop.json --data data/sidd --output runs/nafnet_smoke --stop-after 2 --device cpu
-python train.py --config configs/unet_laptop.json --data data/sidd --output runs/unet_smoke --resume runs/unet_smoke/last.pt
-python denoise.py --input path/to/noisy.png --checkpoint runs/nafnet/best.pt --output results/denoised.png
-```
-
-`--stop-after` is an absolute total step and preserves the original LR schedule.
-Resume requires the same config/manifests and complete original run folder.
-Unexpected interruption loses work since the last validation checkpoint. Each
-training step samples pairs with replacement, with identical crop/augmentation
-sequences for both models at the same seed and step. Validation uses a fixed
-center crop. Reading original full-resolution PNGs before cropping can be slow.
-Use SSD storage. Device selection is `auto` (CUDA, then Apple MPS, then CPU),
-or force `--device cpu`. CUDA/MPS require a compatible PyTorch build and hardware.
-
-Outputs must be empty/new for a fresh run or evaluation, to avoid mixing results.
-If memory is limited, use laptop configs or lower batch/patch size for BOTH
-models in new configs; use tiled inference for evaluation. A two-step smoke run
-is only a software check. It is not a trained research model.
-
-## Models and experiment scope
-
-| Config | Role | Width | Encoder / middle / decoder |
-| --- | --- | --- | --- |
-| `unet_laptop.json` | U-Net adapted for denoising | 16 | Four downsampling scales, double conv + ReLU, concat skips |
-| `nafnet_laptop.json` | Reduced NAFNet for accessible experiments | 16 | [1,1,1,1] / 1 / [1,1,1,1] |
-| `unet_standard.json` | Larger U-Net baseline | 32 | Same baseline structure |
-| `nafnet_standard.json` | Official SIDD width-32 NAFNet block configuration | 32 | [2,2,4,8] / 12 / [2,2,2,2] |
-
-All supplied configs share the same step budget, input patches, batch size,
-optimizer, loss, seed and validation procedure. Equal width does not mean equal
-parameter count or compute. The laptop NAFNet is a smaller variant, so label it
-**NAFNet-small (ours, reduced configuration)** in a report.
-
-The standard config matches the upstream base architecture's block counts, but
-uses our controlled training recipe, not the original multi-GPU recipe. We use
-base NAFNet global pooling, without upstream NAFNetLocal/TLC conversion.
-
-## Outputs and reporting
-
-- `runs/<name>/config.json`, `run_info.json`, `history.csv`, `best.pt`, `last.pt`.
-- `results/comparison/summary.json`: measured metrics, parameters, synchronized
-  inference timings, checkpoint/manifest hashes and training configurations.
-- `per_image.csv` and side-by-side PNGs: noisy / prediction / ground truth.
-
-Report internal test, official validation and official benchmark results separately.
-Metrics use float RGB [0,1], clipped predictions, no extra border crop, mean of
-per-image PSNRs, and 11x11 Gaussian SSIM (sigma 1.5, population covariance, valid
-region). Timings use float32 inference after warm-up and exclude image loading,
-host-to-device transfer, metrics and saving. Tile processing is included.
-
-Tiled inference defaults to 256px with 32px overlap to bound activation memory.
-It changes pooling context; use the same settings for both models and report them.
-Use `--tile-size 0` for full-image evaluation when memory allows. Center-crop
-validation selects checkpoints; final evaluation uses every full manifest image.
-
-**No trained weights or SIDD research results are bundled.** Software smoke tests
-are not evidence of denoising performance. See [docs/RESEARCH_PROTOCOL.md](docs/RESEARCH_PROTOCOL.md)
-before writing the results section.
-
-## Tests
-
-```bash
-python -m pip install -r requirements-dev.txt
-python -m pytest -q
-```
-
-## References and attribution
-
-- [SIDD: A High-Quality Denoising Dataset for Smartphone Cameras (CVPR 2018)](https://abdokamel.github.io/sidd/)
-- [NAFNet: Simple Baselines for Image Restoration (ECCV 2022)](https://arxiv.org/abs/2204.04676)
-- [U-Net: Convolutional Networks for Biomedical Image Segmentation (MICCAI 2015)](https://arxiv.org/abs/1505.04597)
-
-NAFNet implementation adapted from [megvii-research/NAFNet](https://github.com/megvii-research/NAFNet).
-See [third_party/README.md](third_party/README.md) and its upstream license.
+Software tests: `python -m pip install -r requirements-dev.txt`, then
+`python -m pytest -q`. Generated test fixtures are software checks only.
+See [docs/VERIFICATION.md](docs/VERIFICATION.md) for actual verification limits and
+[docs/RESEARCH_PROTOCOL.md](docs/RESEARCH_PROTOCOL.md) for experiment controls.
+NAFNet attribution/license: [third_party/README.md](third_party/README.md).
