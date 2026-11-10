@@ -1,0 +1,35 @@
+{
+  "protocol": "internal",
+  "seed": 42,
+  "grouping": "physical scene (second original folder field)",
+  "splits": {
+    "train": {
+      "pairs": 125,
+      "groups": [
+        "scene_01",
+        "scene_02",
+        "scene_03",
+        "scene_05",
+        "scene_06",
+        "scene_07",
+        "scene_09",
+        "scene_10"
+      ],
+      "sha256": "ddd96d581dbaa0f49fc7ea16dc53443663bbe60aed9d6056edb4112dc7e6d0e8"
+    },
+    "val": {
+      "pairs": 20,
+      "groups": [
+        "scene_08"
+      ],
+      "sha256": "68bbbe42a1d760d37af0abb29381c2c9f65e574f97674070356c3d742b134180"
+    },
+    "test": {
+      "pairs": 15,
+      "groups": [
+        "scene_04"
+      ],
+      "sha256": "ca6997441c1ea337dec3da345dba0882a90f056b6e2aa34eba008cbdeb3ff91f"
+    }
+  }
+}

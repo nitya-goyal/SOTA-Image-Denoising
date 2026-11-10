@@ -1,0 +1,53 @@
+{
+  "environment": {
+    "python": "3.10.10",
+    "torch": "2.5.1+cu121",
+    "numpy": "2.2.6",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "device": "cuda",
+    "device_name": "NVIDIA GeForce RTX 4050 Laptop GPU"
+  },
+  "manifest": "data\\sidd_small_internal_seed42\\val.csv",
+  "manifest_sha256": "68bbbe42a1d760d37af0abb29381c2c9f65e574f97674070356c3d742b134180",
+  "tile_size": 256,
+  "overlap": 32,
+  "timing_repeats": 3,
+  "threads": 4,
+  "precision": "float32",
+  "metric_protocol": "RGB float [0,1]; mean image PSNR; Gaussian valid-region SSIM",
+  "matched_configured_budget_and_manifests": true,
+  "models": [
+    {
+      "model": "1_unet",
+      "checkpoint": "runs\\unet_sidd_small_seed42\\best.pt",
+      "checkpoint_sha256": "89702ba3095848cb45cb92d468ac21acf3a1a3fa464813b29b9633c5a89b9404",
+      "training_step": 18000,
+      "parameters": 7846723,
+      "pairs": 20,
+      "psnr": 34.24213979929543,
+      "ssim": 0.8538883749214324,
+      "noisy_psnr": 26.467437632266734,
+      "noisy_ssim": 0.5554770848323346,
+      "latency_ms": 1256.4511533334098,
+      "training_config": {
+        "model": {
+          "name": "unet",
+          "width": 32
+        },
+        "seed": 42,
+        "max_steps": 20000,
+        "batch_size": 2,
+        "patch_size": 128,
+        "val_patch_size": 256,
+        "eval_every": 1000,
+        "lr": 0.0002,
+        "min_lr": 1E-06,
+        "amp": false
+      },
+      "training_manifests": {
+        "train": "ddd96d581dbaa0f49fc7ea16dc53443663bbe60aed9d6056edb4112dc7e6d0e8",
+        "val": "68bbbe42a1d760d37af0abb29381c2c9f65e574f97674070356c3d742b134180"
+      }
+    }
+  ]
+}
