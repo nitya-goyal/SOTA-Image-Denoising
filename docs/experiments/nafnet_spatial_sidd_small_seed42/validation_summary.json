@@ -1,0 +1,66 @@
+{
+  "environment": {
+    "python": "3.10.10",
+    "torch": "2.5.1+cu121",
+    "numpy": "2.2.6",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "device": "cuda",
+    "device_name": "NVIDIA GeForce RTX 4050 Laptop GPU"
+  },
+  "manifest": "data\\sidd_small_internal_seed42\\val.csv",
+  "manifest_sha256": "68bbbe42a1d760d37af0abb29381c2c9f65e574f97674070356c3d742b134180",
+  "tile_size": 256,
+  "overlap": 32,
+  "timing_repeats": 3,
+  "threads": 4,
+  "precision": "float32",
+  "metric_protocol": "RGB float [0,1]; mean image PSNR; Gaussian valid-region SSIM",
+  "matched_configured_budget_and_manifests": true,
+  "models": [
+    {
+      "model": "1_nafnet_spatial",
+      "checkpoint": "runs\\nafnet_spatial_sidd_small_seed42\\best.pt",
+      "checkpoint_sha256": "db628bce2d55f2055ca630960db2506bc82c613f8ad6504845e451e64dcc727b",
+      "training_step": 16000,
+      "parameters": 29163279,
+      "pairs": 20,
+      "psnr": 35.20679742100867,
+      "ssim": 0.8838483557106394,
+      "noisy_psnr": 26.467437632266734,
+      "noisy_ssim": 0.5554770848323346,
+      "latency_ms": 26873.306150000404,
+      "training_config": {
+        "model": {
+          "name": "nafnet_spatial",
+          "width": 32,
+          "middle_blk_num": 12,
+          "enc_blk_nums": [
+            2,
+            2,
+            4,
+            8
+          ],
+          "dec_blk_nums": [
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "seed": 42,
+        "max_steps": 20000,
+        "batch_size": 2,
+        "patch_size": 128,
+        "val_patch_size": 256,
+        "eval_every": 1000,
+        "lr": 0.0002,
+        "min_lr": 1e-06,
+        "amp": false
+      },
+      "training_manifests": {
+        "train": "ddd96d581dbaa0f49fc7ea16dc53443663bbe60aed9d6056edb4112dc7e6d0e8",
+        "val": "68bbbe42a1d760d37af0abb29381c2c9f65e574f97674070356c3d742b134180"
+      }
+    }
+  ]
+}
