@@ -1,0 +1,21 @@
+{
+  "environment": {
+    "python": "3.10.10",
+    "torch": "2.5.1+cu121",
+    "numpy": "2.2.6",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "device": "cuda",
+    "device_name": "NVIDIA GeForce RTX 4050 Laptop GPU"
+  },
+  "manifest_hashes": {
+    "train": "ddd96d581dbaa0f49fc7ea16dc53443663bbe60aed9d6056edb4112dc7e6d0e8",
+    "val": "68bbbe42a1d760d37af0abb29381c2c9f65e574f97674070356c3d742b134180"
+  },
+  "parameters": 25730443,
+  "train_pairs": 125,
+  "val_pairs": 20,
+  "validation_scope": "deterministic center 256x256",
+  "loss": "L1",
+  "amp_enabled": false,
+  "threads": 4
+}

@@ -46,11 +46,33 @@ class SpatialAttention(nn.Module):
         return x * mask
 
 
+class CBAMChannelAttention(nn.Module):
+    """CBAM-style channel attention (Woo et al., ECCV 2018).
+    Uses global average and maximum pooling, a shared two-layer 1x1 MLP with ReLU
+    and reduction ratio 16 (hidden channels at least 1), with explicit bias=True on both conv layers,
+    sums branch outputs, and applies sigmoid and feature multiplication.
+    """
+    def __init__(self, channels, reduction=16):
+        super().__init__()
+        hidden = max(1, channels // reduction)
+        self.mlp = nn.Sequential(
+            nn.Conv2d(channels, hidden, 1, bias=True),
+            nn.ReLU(inplace=False),
+            nn.Conv2d(hidden, channels, 1, bias=True),
+        )
+
+    def forward(self, x):
+        avg_out = self.mlp(F.adaptive_avg_pool2d(x, 1))
+        max_out = self.mlp(F.adaptive_max_pool2d(x, 1))
+        mask = torch.sigmoid(avg_out + max_out)
+        return x * mask
+
+
 class NAFBlock(nn.Module):
     def __init__(self, channels, attention='sca'):
         super().__init__()
-        if attention not in ('sca', 'spatial'):
-            raise ValueError(f"Unknown attention type: {attention}; choose 'sca' or 'spatial'")
+        if attention not in ('sca', 'spatial', 'channel', 'combined'):
+            raise ValueError(f"Unknown attention type: {attention}; choose 'sca', 'spatial', 'channel', or 'combined'")
         self.attention = attention
         expanded = channels * 2
         self.norm1 = LayerNorm2d(channels)
@@ -64,15 +86,21 @@ class NAFBlock(nn.Module):
         self.beta = nn.Parameter(torch.zeros(1, channels, 1, 1))
         self.gamma = nn.Parameter(torch.zeros(1, channels, 1, 1))
 
-        self.sca = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Conv2d(channels, channels, 1))
+        if attention in ('sca', 'spatial'):
+            self.sca = nn.Sequential(nn.AdaptiveAvgPool2d(1), nn.Conv2d(channels, channels, 1))
+        else:
+            self.channel_att = CBAMChannelAttention(channels)
 
-        if attention == 'spatial':
+        if attention in ('spatial', 'combined'):
             self.spatial_att = SpatialAttention()
 
     def forward(self, image):
         spatial = self.sg(self.conv2(self.conv1(self.norm1(image))))
-        spatial = spatial * self.sca(spatial)
-        if self.attention == 'spatial':
+        if self.attention in ('sca', 'spatial'):
+            spatial = spatial * self.sca(spatial)
+        else:
+            spatial = self.channel_att(spatial)
+        if self.attention in ('spatial', 'combined'):
             spatial = self.spatial_att(spatial)
         spatial = self.conv3(spatial)
         intermediate = image + self.beta * spatial
@@ -88,8 +116,8 @@ class NAFNet(nn.Module):
         if (width < 1 or middle_blk_num < 1 or len(enc_blk_nums) != len(dec_blk_nums)
                 or not enc_blk_nums or any(n < 1 for n in (*enc_blk_nums, *dec_blk_nums))):
             raise ValueError('Require positive width/block counts and matching encoder/decoder levels')
-        if attention not in ('sca', 'spatial'):
-            raise ValueError(f"Unknown attention type: {attention}; choose 'sca' or 'spatial'")
+        if attention not in ('sca', 'spatial', 'channel', 'combined'):
+            raise ValueError(f"Unknown attention type: {attention}; choose 'sca', 'spatial', 'channel', or 'combined'")
         self.attention = attention
         self.intro = nn.Conv2d(3, width, 3, padding=1)
         self.ending = nn.Conv2d(width, 3, 3, padding=1)

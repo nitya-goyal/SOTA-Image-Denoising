@@ -1,0 +1,66 @@
+{
+  "environment": {
+    "python": "3.10.10",
+    "torch": "2.5.1+cu121",
+    "numpy": "2.2.6",
+    "platform": "Windows-10-10.0.26300-SP0",
+    "device": "cuda",
+    "device_name": "NVIDIA GeForce RTX 4050 Laptop GPU"
+  },
+  "manifest": "data\\sidd_small_internal_seed42\\test.csv",
+  "manifest_sha256": "ca6997441c1ea337dec3da345dba0882a90f056b6e2aa34eba008cbdeb3ff91f",
+  "tile_size": 256,
+  "overlap": 32,
+  "timing_repeats": 3,
+  "threads": 4,
+  "precision": "float32",
+  "metric_protocol": "RGB float [0,1]; mean image PSNR; Gaussian valid-region SSIM",
+  "matched_configured_budget_and_manifests": true,
+  "models": [
+    {
+      "model": "1_nafnet_channel",
+      "checkpoint": "runs\\nafnet_channel_sidd_small_seed42_v2\\best.pt",
+      "checkpoint_sha256": "e80baedf983acdcff2a94d94f5665b2b8682d30e6efcacce3a0c93953dc8ddd3",
+      "training_step": 16000,
+      "parameters": 25730443,
+      "pairs": 15,
+      "psnr": 40.041119666706855,
+      "ssim": 0.9563966325542056,
+      "noisy_psnr": 28.39106342523627,
+      "noisy_ssim": 0.5222312794924586,
+      "latency_ms": 54484.68726000025,
+      "training_config": {
+        "model": {
+          "name": "nafnet_channel",
+          "width": 32,
+          "middle_blk_num": 12,
+          "enc_blk_nums": [
+            2,
+            2,
+            4,
+            8
+          ],
+          "dec_blk_nums": [
+            2,
+            2,
+            2,
+            2
+          ]
+        },
+        "seed": 42,
+        "max_steps": 20000,
+        "batch_size": 2,
+        "patch_size": 128,
+        "val_patch_size": 256,
+        "eval_every": 1000,
+        "lr": 0.0002,
+        "min_lr": 1e-06,
+        "amp": false
+      },
+      "training_manifests": {
+        "train": "ddd96d581dbaa0f49fc7ea16dc53443663bbe60aed9d6056edb4112dc7e6d0e8",
+        "val": "68bbbe42a1d760d37af0abb29381c2c9f65e574f97674070356c3d742b134180"
+      }
+    }
+  ]
+}

@@ -11,6 +11,8 @@ def build_model(config):
     expected_attention = {
         'nafnet': 'sca',
         'nafnet_spatial': 'spatial',
+        'nafnet_channel': 'channel',
+        'nafnet_combined': 'combined',
     }
 
     if name in expected_attention:
@@ -28,5 +30,6 @@ def build_model(config):
         return UNet(**options)
 
     raise ValueError(
-        f"Unknown model: {name}; choose unet, nafnet, or nafnet_spatial"
+        f"Unknown model: {name}; choose unet, nafnet, nafnet_spatial, "
+        f"nafnet_channel, or nafnet_combined"
     )
